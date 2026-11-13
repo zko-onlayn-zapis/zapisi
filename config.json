@@ -1,0 +1,10 @@
+{
+  "версия": "v1.2.0",
+  "пакет": "zko_online_zapisi_v1.2.0",
+  "среда": "тест",
+  "адресШлюза": "https://script.google.com/macros/s/AKfycbxxr6o8T3THruWq4FPxP6Zzrk23C2Q00DS8FjmE1tV3DJeemv-1trOTfQPCr1o8b_4jbQ/exec",
+  "имяБота": "zko_onlayn_zapis_bot",
+  "адресСайта": "https://zko-onlayn-zapis.github.io/zapisi/",
+  "ватсапАдмина": "77066120376",
+  "часовойПояс": 5
+}
