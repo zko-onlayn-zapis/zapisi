@@ -1,7 +1,7 @@
-/* ЗКО Онлайн-записи v1.2.0 — клиентская часть (PWA). Секретов в файле нет; адрес шлюза берётся из config.json. */
+/* ЗКО Онлайн-записи v1.2.1 — клиентская часть (PWA). Секретов в файле нет; адрес шлюза берётся из config.json. */
 (function () {
 'use strict';
-var CFG = {}, TOKEN = '', APP = document.getElementById('app'), TIMER = null, VERSION = 'v1.2.0';
+var CFG = {}, TOKEN = '', APP = document.getElementById('app'), TIMER = null, VERSION = 'v1.2.1', DEMO = false, MEM = {};
 var ERR = {
   auth_required: 'Нужно войти.', pin_required: 'Введите ПИН-код.', not_master: 'Этот номер не зарегистрирован как мастер.', blocked: 'Кабинет заблокирован администратором.',
   bad_code: 'Неверный код.', code_dead: 'Код сгорел после 3 ошибок. Получите новый.', code_expired: 'Код устарел. Получите новый.', code_not_sent: 'Сначала откройте бота и поделитесь номером.',
@@ -9,12 +9,12 @@ var ERR = {
   slug_taken: 'Такой адрес уже занят.', already_master: 'Вы уже зарегистрированы как мастер.', no_master: 'Мастер не найден.', slot_taken: 'Это время уже занято. Выберите другое.', self_booking: 'Нельзя записаться к самому себе.',
   cloud_ban: 'Запись недоступна: номер заблокирован платформой.', master_ban: 'Мастер не принимает запись с этого номера.', bad_services: 'Выбранные услуги недоступны.', too_many: 'Слишком много активных записей или запросов. Подождите.',
   overlap: 'У вас уже есть запись на это время.', no_booking: 'Запись не найдена.', forbidden: 'Недостаточно прав.', bad_status: 'Так отметить нельзя.', not_yet: 'Визит ещё не начался.', not_done: 'Оценить можно после завершённого визита.',
-  bad_stars: 'Поставьте от 1 до 5 звёзд.', limit_free: 'Бесплатный тариф: до 5 услуг. Подключите VIP, чтобы добавить больше.', bad_title: 'Введите название услуги.', bad_price: 'Цена указана неверно.', bad_minutes: 'Длительность: от 30 минут, шаг 30.',
+  bad_card: 'Номер карточки: от 2 до 40 символов (буквы, цифры, дефис).', card_taken: 'Эта карточка уже привязана к другому мастеру.', bad_stars: 'Поставьте от 1 до 5 звёзд.', limit_free: 'Бесплатный тариф: до 5 услуг. Подключите VIP, чтобы добавить больше.', bad_title: 'Введите название услуги.', bad_price: 'Цена указана неверно.', bad_minutes: 'Длительность: от 30 минут, шаг 30.',
   no_service: 'Услуга не найдена.', bad_schedule: 'Проверьте часы: конец позже начала, перерыв внутри рабочего времени.', bad_date: 'Неверная дата.', no_history: 'В чёрный список можно добавить только того, кто записывался к вам.', bad_phone: 'Неверный номер.',
   bot_not_set: 'Сервис ещё не настроен (нет бота).', busy: 'Сервер занят, повторите через минуту.', bad_key: 'Ошибка сеанса, обновите страницу.', server_error: 'Ошибка сервера. Повторите позже.', net: 'Нет связи. Проверьте интернет.', no_gateway: 'Сервис ещё не подключён (не указан адрес шлюза в config.json).'
 };
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} return null; }
+function ls(k, v) { if (DEMO && k !== 'zk_theme') { if (v === undefined) return MEM[k] === undefined ? null : MEM[k]; if (v === null) delete MEM[k]; else MEM[k] = String(v); return null; } try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} return null; }
 function toast(t) { var el = document.getElementById('toast'); el.textContent = t; el.className = 'show'; clearTimeout(toast.t); toast.t = setTimeout(function () { el.className = ''; }, 3200); }
 function money(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ₸'; }
 function dur(m) { var h = Math.floor(m / 60), r = m % 60; return (h ? h + ' ч' : '') + (h && r ? ' ' : '') + (r ? r + ' мин' : ''); }
@@ -33,14 +33,16 @@ function addDay(s, n) { var p = s.split('-'); var d = new Date(Date.UTC(+p[0], +
 function ruDate(s) { var p = s.split('-'), dn = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'], d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])); return dn[d.getUTCDay()] + ', ' + p[2] + '.' + p[1] + '.' + p[0]; }
 function rndKey() { var a = new Uint8Array(16); (window.crypto || {}).getRandomValues ? crypto.getRandomValues(a) : a.forEach(function (_, i) { a[i] = Math.floor(Math.random() * 256); }); return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
 function api(action, data) {
-  if (!CFG.gatewayUrl) return Promise.reject(new Error('no_gateway'));
   var body = Object.assign({ action: action }, data || {}); if (TOKEN && body.token === undefined) body.token = TOKEN;
+  var done = function (j) { if (!j.ok) { if (j.error === 'auth_required' && TOKEN && !DEMO) { setToken(''); } throw new Error(j.error || 'server_error'); } return j; };
+  /* ДЕМО: запрос выполняется в самой странице (demo.js), в сеть не уходит НИЧЕГО */
+  if (DEMO) return window.ZKDemo.call(body).then(done);
+  if (!CFG.gatewayUrl) return Promise.reject(new Error('no_gateway'));
   return fetch(CFG.gatewayUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) })
-    .then(function (r) { return r.json(); }, function () { throw new Error('net'); })
-    .then(function (j) { if (!j.ok) { if (j.error === 'auth_required' && TOKEN) { setToken(''); } throw new Error(j.error || 'server_error'); } return j; });
+    .then(function (r) { return r.json(); }, function () { throw new Error('net'); }).then(done);
 }
 function errText(e) { var c = e && e.message; return ERR[c] || ('Ошибка: ' + c); }
-function setToken(t) { TOKEN = t || ''; ls('zk_token', t || null); }
+function setToken(t) { TOKEN = t || ''; if (!DEMO) ls('zk_token', t || null); }
 function view(html) { stopTimer(); APP.innerHTML = html; window.scrollTo(0, 0); }
 function stopTimer() { if (TIMER) { clearInterval(TIMER); TIMER = null; } }
 function $(s, r) { return (r || APP).querySelector(s); }
@@ -48,15 +50,44 @@ function $$(s, r) { return Array.prototype.slice.call((r || APP).querySelectorAl
 function go(h) { location.hash = h; }
 function load(fn) { APP.insertAdjacentHTML('beforeend', '<p class="muted center" id="ld">…</p>'); return fn().then(function (x) { var l = $('#ld'); if (l) l.remove(); return x; }, function (e) { var l = $('#ld'); if (l) l.remove(); toast(errText(e)); throw e; }); }
 
+/* ---------- согласие на обработку данных и «Условия и политика конфиденциальности» ---------- */
+var POLICY = [
+  ['Что это за сервис', 'ЗКО Онлайн-записи — сайт, где можно записаться к мастеру на удобное время. Услугу оказывает сам мастер, сервис только соединяет вас и помогает не перепутать время. Оплата — между вами и мастером на месте.'],
+  ['Какие данные мы получаем', 'Клиент: номер телефона, имя, которое вы сами вводите, ваши записи (дата, время, услуги, сумма) и оценки. Мастер: имя или название, адрес личной страницы, описание, услуги, график. Для входа через Телеграм бот видит ваш номер и ваш номер аккаунта в Телеграме. ПИН-код мы не храним: сохраняется только его зашифрованный отпечаток.'],
+  ['Зачем нужны эти данные', 'Чтобы записать вас и показать мастеру, кто придёт; прислать код входа, подтверждение и напоминание; показать оценки; защитить сервис от злоупотреблений (ложные записи, спам, оскорбления). Ни для чего другого данные не используются.'],
+  ['Кто их видит', 'Мастер видит имя и номер телефона тех, кто записался именно к нему. Клиенты видят только публичную страницу мастера: имя, услуги, цены, свободное время, оценки. Администратор сервиса видит данные для поддержки и борьбы с нарушителями. Мы не продаём данные и не передаём их рекламным компаниям.'],
+  ['Где хранятся', 'Данные лежат в закрытой Google-таблице сервиса. Для работы используются Телеграм (доставка кодов и уведомлений), Google (хранение) и GitHub Pages (показ сайта). Эти площадки работают по своим правилам.'],
+  ['Сколько хранятся', 'Пока вы пользуетесь сервисом. По вашей просьбе данные удаляются в течение 30 дней. Исключение — запись в списке заблокированных: она нужна, чтобы нарушитель не вернулся под тем же номером.'],
+  ['Ваши права', 'Вы можете в любой момент отозвать согласие, узнать, какие данные о вас хранятся, исправить или удалить их. Для этого напишите администратору сервиса (контакты — в карточке или у мастера, который вам дал ссылку). После отзыва согласия запись и вход по этому номеру станут недоступны.'],
+  ['Правила пользования', 'Записывайтесь только на себя и только с настоящим номером. Не можете прийти — отмените запись заранее. Мастер указывает честные цены и вовремя отмечает визиты. Нельзя спамить, оскорблять, оставлять заведомо ложные оценки. За нарушения номер и страницу могут заблокировать.'],
+  ['Безопасность', 'Код из Телеграма и ПИН-код никому не сообщайте — ни мастеру, ни «сотруднику сервиса». Мы никогда не просим их.'],
+  ['Память устройства', 'Чтобы вам не вводить код каждый раз, сайт запоминает вход и выбранную тему на вашем телефоне. Выход из кабинета стирает вход.'],
+  ['Изменения', 'Если правила изменятся, новая версия появится здесь. Продолжая пользоваться сервисом, вы соглашаетесь с актуальной версией.']
+];
+function consentHtml() { return '<label class="consent"><input type="checkbox" class="cons" checked><span>Нажимая кнопку, я даю согласие на обработку номера телефона для записи и связи с мастером. <a href="#" class="polLink">Условия и политика конфиденциальности</a></span></label>'; }
+function policyOpen() {
+  if (document.getElementById('polBox')) return;
+  var box = document.createElement('div'); box.id = 'polBox'; box.className = 'wn-back';
+  box.innerHTML = '<div class="wn-card" role="dialog" aria-modal="true"><h2>Условия и политика конфиденциальности</h2>' + POLICY.map(function (x, i) { return '<h3>' + (i + 1) + '. ' + esc(x[0]) + '</h3><p>' + esc(x[1]) + '</p>'; }).join('') + '<button class="btn" id="polOk">[ Понятно, закрыть ]</button></div>';
+  document.body.appendChild(box);
+  document.getElementById('polOk').onclick = function () { box.remove(); };
+  box.onclick = function (e) { if (e.target === box) box.remove(); };
+}
+function consentBind(root) {
+  $$('.polLink', root).forEach(function (a) { a.onclick = function (e) { e.preventDefault(); policyOpen(); }; });
+}
+function consentOn(root) { var c = $('.cons', root); return !c || c.checked; }
+var CONSENT_ERR = 'Поставьте галочку согласия на обработку номера телефона.';
+
 /* ---------- вход через Телеграм-бота (общий блок) ---------- */
 function loginBlock(onDone, opts) {
   opts = opts || {};
   var box = document.createElement('div'); box.className = 'card';
-  box.innerHTML = '<b>' + esc(opts.title || 'Вход по номеру телефона') + '</b><p class="muted small">Нажмите кнопку — откроется наш Телеграм-бот. Поделитесь номером, бот сразу пришлёт 4 цифры. Вернитесь сюда и введите их.</p><button class="btn" id="lgGet">✈️ Получить код в Телеграм</button><div id="lgCode" hidden><input class="code" id="lgIn" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="one-time-code"><button class="btn ok" id="lgOk">Подтвердить код</button><p class="muted small center">Бот не ответил? Откройте его ещё раз и нажмите «Старт».</p></div><div id="lgErr"></div>';
-  var req = '';
+  box.innerHTML = '<b>' + esc(opts.title || 'Вход по номеру телефона') + '</b><p class="muted small">Нажмите кнопку — откроется наш Телеграм-бот. Поделитесь номером, бот сразу пришлёт 4 цифры. Вернитесь сюда и введите их.</p>' + consentHtml() + '<button class="btn" id="lgGet">✈️ Получить код в Телеграм</button><div id="lgCode" hidden><input class="code" id="lgIn" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="one-time-code"><button class="btn ok" id="lgOk">Подтвердить код</button><p class="muted small center">Бот не ответил? Откройте его ещё раз и нажмите «Старт».</p></div><div id="lgErr"></div>';
+  var req = ''; consentBind(box);
   function err(t) { box.querySelector('#lgErr').innerHTML = t ? '<div class="err">' + esc(t) + '</div>' : ''; }
   box.querySelector('#lgGet').onclick = function () {
-    err(''); api('authStart', { token: '' }).then(function (j) {
+    err(''); if (!consentOn(box)) { err(CONSENT_ERR); return; } api('authStart', { token: '' }).then(function (j) {
       req = j.req; box.querySelector('#lgCode').hidden = false; window.open(j.link, '_blank'); box.querySelector('#lgIn').focus();
       box.querySelector('#lgGet').textContent = '✈️ Открыть бота ещё раз'; box.querySelector('#lgGet').onclick = function () { window.open(j.link, '_blank'); };
     }).catch(function (e) { err(errText(e)); });
@@ -76,6 +107,7 @@ function loadNovosti() {
    .then(function (t) { return t.split(/\r?\n/).map(function (x) { return x.trim(); }).filter(function (x) { return x && x.charAt(0) !== '#' && !NOVOSTI_BAD.test(x); }).map(function (x) { return x.replace(/^[•\-*]\s*/, ''); }).slice(0, 30); });
 }
 function whatsNew(force) {
+  if (DEMO) return;
   if (!force && ls('zk_whatsnew_ver') === VERSION) return;
   if (document.getElementById('wnBox')) return;
   loadNovosti().then(function (items) {
@@ -87,21 +119,43 @@ function whatsNew(force) {
   });
 }
 function home() {
-  view('<h1>Онлайн-запись к мастерам ЗКО</h1><p class="muted">Выберите время — мастер получит уведомление в Телеграме.</p><button class="btn" id="hMy">📋 Мои записи</button><button class="btn sec" id="hNews">✨ Что нового в версии</button><div class="card"><b>Как записаться?</b><p class="muted small">Откройте ссылку, которую вам прислал мастер, или карточку мастера в «Картотеке ЗКО». Выберите услуги и время, подтвердите номер кодом из Телеграма — и запись готова.</p></div><p class="muted small center" id="hVer">' + VERSION + ' · Проект разработан: v9o9v9a9n</p>');
+  view('<h1>Онлайн-запись к мастерам ЗКО</h1><p class="muted">Выберите время — мастер получит уведомление в Телеграме.</p><button class="btn" id="hMy">📋 Мои записи</button><button class="btn sec" id="hNews">✨ Что нового в версии</button><button class="btn demo" id="hDemo">🎮 Попробовать демо (без регистрации)</button><div class="card"><b>Как записаться?</b><p class="muted small">Откройте ссылку, которую вам прислал мастер, или карточку мастера в «Картотеке ЗКО». Выберите услуги и время, подтвердите номер кодом из Телеграма — и запись готова.</p></div><p class="muted small center" id="hVer">' + VERSION + ' · Проект разработан: v9o9v9a9n</p>');
   $('#hMy').onclick = function () { go('#/my'); };
   $('#hNews').onclick = function () { whatsNew(true); };
+  $('#hDemo').onclick = function () { enterDemo(); };
   /* вход для мастеров скрыт от посетителей: пять быстрых касаний по строке версии (или прямая ссылка …/#/cab) */
   var taps = 0, tt = 0;
   $('#hVer').onclick = function () { var n = Date.now(); taps = (n - tt < 1500) ? taps + 1 : 1; tt = n; if (taps >= 5) { taps = 0; go('#/cab'); } };
 }
 
+/* ---------- ДЕМО-песочница: всё в памяти страницы, в Google Таблицу и Телеграм ничего не уходит ---------- */
+function enterDemo(then) {
+  var go1 = function () { DEMO = true; TOKEN = ''; window.ZKDemo.start(); showBar(); (then || demoHome)(); };
+  if (window.ZKDemo) return go1();
+  var sc = document.createElement('script'); sc.src = 'demo.js?v=' + encodeURIComponent(VERSION); sc.onload = go1; sc.onerror = function () { toast('Не удалось загрузить демо. Проверьте интернет.'); }; document.head.appendChild(sc);
+}
+function showBar() {
+  var b = document.getElementById('demoBar');
+  if (!b) { b = document.createElement('div'); b.id = 'demoBar'; document.body.insertBefore(b, document.body.firstChild); document.body.classList.add('demo-on'); }
+  b.innerHTML = '<b>🎮 ДЕМО-РЕЖИМ — данные не сохраняются</b><span><button id="dbRole">Сменить роль</button><button id="dbOut">Выйти из демо</button></span>';
+  document.getElementById('dbRole').onclick = function () { TOKEN = ''; go('#/'); demoHome(); };
+  var lg = document.getElementById('logo'); if (lg && !lg.getAttribute('data-d')) { lg.setAttribute('data-d', '1'); lg.addEventListener('click', function (e) { if (DEMO) { e.preventDefault(); TOKEN = ''; go('#/'); demoHome(); } }); }
+  document.getElementById('dbOut').onclick = function () { location.href = location.pathname; };
+}
+function demoHome() {
+  TOKEN = ''; stopTimer();
+  view('<h1>🎮 Демо-песочница</h1><p class="muted">Попробуйте сервис по-настоящему — без регистрации и кодов. Ничего не сохраняется: когда закроете вкладку или нажмёте «Выйти из демо», всё исчезнет.</p><div class="card"><b>Войти как тестовый Мастер</b><p class="muted small">Барбер Азамат, с. Дарьинск. Добавляйте услуги, меняйте график, ставьте выходные, смотрите записи.</p><button class="btn ok" id="dM">💈 Я мастер</button></div><div class="card"><b>Войти как тестовый Клиент</b><p class="muted small">Запись к Азамату: выберите услуги и время, отмените запись, поставьте оценку за прошлый визит.</p><button class="btn" id="dC">🙋 Я клиент</button></div><p class="muted small center">Если мастер и клиент пользуются одной демо-базой, запись клиента сразу видна в кабинете мастера — переключайтесь кнопкой «Сменить роль».</p>');
+  $('#dM').onclick = function () { TOKEN = window.ZKDemo.token('master'); CAB = null; go('#/cab'); cabEntry(); };
+  $('#dC').onclick = function () { TOKEN = window.ZKDemo.token('client'); go('#/'); masterPage(window.ZKDemo.slug, '', [], ''); };
+}
+
 /* ---------- страница мастера для клиента ---------- */
 var P = null;
 var EM = ['✂️', '💅', '💇', '🧖', '💆', '🎨', '👁️', '🧴', '💈', '🌿'];
-function masterPage(slug, tel, pre) {
+function masterPage(slug, tel, pre, card) {
   P = { slug: slug || '', pre: pre || [], sel: {}, cat: null, date: zkoToday(), key: ls('zk_hold') || (function () { var k = rndKey(); ls('zk_hold', k); return k; })(), slot: null, exp: 0 };
   view('<p class="muted center">Загрузка…</p>');
-  api('master', slug ? { slug: slug, token: '' } : { tel: tel, token: '' }).then(function (j) { P.d = j; P.slug = j.master.slug; P.pre.forEach(function (id) { if (j.services.some(function (x) { return String(x.id) === id; })) P.sel[id] = 1; }); renderMaster(); }).catch(function (e) { view('<div class="err">' + esc(errText(e)) + '</div><button class="btn sec" onclick="location.hash=\'#/\'">На главную</button>'); });
+  api('master', Object.assign({ token: '' }, slug ? { slug: slug } : {}, card ? { card: card } : {}, tel ? { tel: tel } : {})).then(function (j) { P.d = j; P.slug = j.master.slug; P.pre.forEach(function (id) { if (j.services.some(function (x) { return String(x.id) === id; })) P.sel[id] = 1; }); renderMaster(); }).catch(function (e) { view('<div class="err">' + esc(errText(e)) + '</div><button class="btn sec" onclick="location.hash=\'#/\'">На главную</button>'); });
 }
 function cats() { var m = {}, o = []; P.d.services.forEach(function (s) { if (!m[s.category]) { m[s.category] = []; o.push(s.category); } m[s.category].push(s); }); return { map: m, order: o }; }
 function sumSel() { var n = 0, t = 0, m = 0; P.d.services.forEach(function (s) { if (P.sel[s.id]) { n++; t += s.price; m += s.minutes; } }); return { n: n, t: t, m: m }; }
@@ -167,7 +221,7 @@ function confirmPage() {
       .catch(function (e) { $('#cErr').innerHTML = '<div class="err">' + esc(errText(e)) + '</div>'; if (e.message === 'slot_taken') setTimeout(timePage, 1500); });
   }
   var a = $('#cAuth');
-  if (TOKEN) { a.innerHTML = '<button class="btn ok" id="cBook">✅ Записаться</button>'; $('#cBook').onclick = doBook; }
+  if (TOKEN) { a.innerHTML = consentHtml() + '<button class="btn ok" id="cBook">✅ Записаться</button>'; consentBind(a); $('#cBook').onclick = function () { if (!consentOn(a)) { $('#cErr').innerHTML = '<div class="err">' + CONSENT_ERR + '</div>'; return; } doBook(); }; }
   else { a.appendChild(loginBlock(function () { doBook(); }, { title: 'Подтвердите номер телефона' })); }
 }
 function done(b) {
@@ -177,6 +231,7 @@ function done(b) {
 
 /* ---------- мои записи ---------- */
 function myPage() {
+  if (DEMO && !TOKEN) return demoHome();
   if (!TOKEN) { view('<h1>Мои записи</h1>'); APP.appendChild(loginBlock(myPage)); return; }
   view('<h1>Мои записи</h1><p class="muted center">Загрузка…</p>');
   api('myBookings').then(function (j) {
@@ -184,7 +239,7 @@ function myPage() {
     view('<h1>Мои записи</h1>' + (j.bookings.length ? j.bookings.map(function (b) { var st = stl[b.status] || [b.status, '']; return '<div class="card"><b>' + esc(b.master) + '</b> <span class="badge ' + st[1] + '">' + st[0] + '</span><br>📅 ' + ruDate(b.date) + ' в ' + esc(b.start) + '<br>💈 ' + esc(b.services) + ' · ' + money(b.total) + '<div>' + (b.status === 'booked' ? '<button class="btn sec sm" data-c="' + b.id + '">❌ Отменить</button>' : '') + (b.canRate ? '<button class="btn sm" data-r="' + b.id + '">⭐ Оценить</button>' : '') + (b.slug ? '<a class="btn sec sm" href="?m=' + esc(b.slug) + '">Записаться снова</a>' : '') + '</div></div>'; }).join('') : '<div class="card muted">Записей пока нет.</div>') + '<button class="btn sec" id="myOut">Выйти</button>');
     $$('[data-c]').forEach(function (b) { b.onclick = function () { if (confirm('Отменить запись?')) api('cancelBooking', { id: b.getAttribute('data-c') }).then(function () { toast('Запись отменена'); myPage(); }).catch(function (e) { toast(errText(e)); }); }; });
     $$('[data-r]').forEach(function (b) { b.onclick = function () { ratePage(b.getAttribute('data-r')); }; });
-    $('#myOut').onclick = function () { api('logout').catch(function () {}); setToken(''); go('#/'); route(); };
+    $('#myOut').onclick = function () { if (DEMO) { TOKEN = ''; go('#/'); demoHome(); return; } api('logout').catch(function () {}); setToken(''); go('#/'); route(); };
   }).catch(function (e) { if (e.message === 'auth_required') myPage(); else view('<div class="err">' + esc(errText(e)) + '</div>'); });
 }
 function ratePage(id) {
@@ -197,6 +252,7 @@ function ratePage(id) {
 
 /* ---------- мастер: вход / регистрация / ПИН ---------- */
 function cabEntry() {
+  if (DEMO && !TOKEN) return demoHome();
   if (!TOKEN) { view('<h1>Кабинет мастера</h1><p class="muted">Вход по номеру телефона. Новый мастер регистрируется после подтверждения номера.</p>'); APP.appendChild(loginBlock(function () { cabEntry(); })); return; }
   api('me').then(function (j) {
     if (!j.isMaster) return regPage();
@@ -205,8 +261,9 @@ function cabEntry() {
   }).catch(function (e) { if (e.message === 'auth_required') cabEntry(); else view('<div class="err">' + esc(errText(e)) + '</div>'); });
 }
 function regPage() {
-  view('<h1>Регистрация мастера</h1><div class="card"><label>Ваше имя или название</label><input id="rn" maxlength="60" placeholder="Анара · Красота"><label>Адрес вашей страницы (латиницей)</label><input id="rs" maxlength="30" placeholder="anara_beauty" autocapitalize="none"><label>О себе (по желанию)</label><textarea id="ra" rows="3" maxlength="400"></textarea><label>Придумайте ПИН-код (4 цифры)</label><input id="rp" inputmode="numeric" maxlength="4" type="password" placeholder="••••"><p class="muted small">ПИН защищает кабинет на новом устройстве. Хранится только в зашифрованном виде.</p><button class="btn ok" id="rOk">Создать кабинет</button><div id="rE"></div></div><p class="muted small center">Бесплатный тариф: до 5 услуг. VIP — безлимит и кнопка записи в Картотеке.</p>');
-  $('#rOk').onclick = function () { api('masterRegister', { name: $('#rn').value, slug: $('#rs').value.trim().toLowerCase(), about: $('#ra').value, pin: $('#rp').value }).then(function () { toast('Кабинет создан!'); cabEntry(); }).catch(function (e) { $('#rE').innerHTML = '<div class="err">' + esc(errText(e)) + '</div>'; }); };
+  view('<h1>Регистрация мастера</h1><div class="card"><label>Ваше имя или название</label><input id="rn" maxlength="60" placeholder="Анара · Красота"><label>Адрес вашей страницы (латиницей)</label><input id="rs" maxlength="30" placeholder="anara_beauty" autocapitalize="none"><label>О себе (по желанию)</label><textarea id="ra" rows="3" maxlength="400"></textarea><label>Придумайте ПИН-код (4 цифры)</label><input id="rp" inputmode="numeric" maxlength="4" type="password" placeholder="••••"><p class="muted small">ПИН защищает кабинет на новом устройстве. Хранится только в зашифрованном виде.</p>' + consentHtml() + '<button class="btn ok" id="rOk">Создать кабинет</button><div id="rE"></div></div><p class="muted small center">Бесплатный тариф: до 5 услуг. VIP — безлимит и кнопка записи в Картотеке.</p>');
+  consentBind(APP);
+  $('#rOk').onclick = function () { if (!consentOn(APP)) { $('#rE').innerHTML = '<div class="err">' + CONSENT_ERR + '</div>'; return; } api('masterRegister', { name: $('#rn').value, slug: $('#rs').value.trim().toLowerCase(), about: $('#ra').value, pin: $('#rp').value }).then(function () { toast('Кабинет создан!'); cabEntry(); }).catch(function (e) { $('#rE').innerHTML = '<div class="err">' + esc(errText(e)) + '</div>'; }); };
 }
 function pinPage() {
   var v = '';
@@ -223,12 +280,12 @@ var CAB = null;
 var TABS = [['rec', '📋 Записи'], ['svc', '💈 Услуги'], ['wk', '🕒 График'], ['cl', '🚫 Клиенты'], ['rv', '⭐ Отзывы'], ['bal', '💳 Баланс']];
 function cab(tab) {
   ls('zk_tab', tab);
-  var m = CAB.master, link = (CFG.siteUrl || (location.origin + location.pathname.replace(/index\.html$/, ''))) + '?m=' + m.slug;
+  var m = CAB.master, link = (CFG.siteUrl || (location.origin + location.pathname.replace(/index\.html$/, ''))) + '?m=' + m.slug; if (DEMO) link = 'В демо ссылка не создаётся';
   view('<div class="card"><b>' + esc(m.name) + '</b> ' + (CAB.sub.tariff ? '<span class="badge vip">VIP</span>' : '<span class="badge">Бесплатный</span>') + '<div class="muted small">Ваша ссылка для клиентов:</div><input readonly id="lnk" value="' + esc(link) + '" onclick="this.select()"><button class="btn sec sm" id="cp">📋 Копировать ссылку</button><button class="btn sec sm" id="cNews">✨ Что нового в версии</button><button class="btn sec sm" id="cOut">Выйти</button></div><div class="tabs">' + TABS.map(function (t) { return '<button class="tab' + (t[0] === tab ? ' on' : '') + '" data-t="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '<button class="tab' + (tab === 'pf' ? ' on' : '') + '" data-t="pf">⚙️ Профиль</button></div><div id="tb"></div>');
   $$('.tab').forEach(function (b) { b.onclick = function () { cab(b.getAttribute('data-t')); }; });
   $('#cp').onclick = function () { try { navigator.clipboard.writeText(link); toast('Ссылка скопирована'); } catch (e) { $('#lnk').select(); } };
   $('#cNews').onclick = function () { whatsNew(true); };
-  $('#cOut').onclick = function () { api('logout').catch(function () {}); setToken(''); go('#/'); route(); };
+  $('#cOut').onclick = function () { if (DEMO) { TOKEN = ''; go('#/'); demoHome(); return; } api('logout').catch(function () {}); setToken(''); go('#/'); route(); };
   ({ rec: tRec, svc: tSvc, wk: tWk, cl: tCl, rv: tRv, bal: tBal, pf: tPf })[tab]($('#tb'));
 }
 function refreshCab(tab) { api('me').then(function (j) { CAB = j; cab(tab); }).catch(function (e) { toast(errText(e)); if (e.message === 'pin_required' || e.message === 'auth_required') cabEntry(); }); }
@@ -286,20 +343,25 @@ function tBal(el) {
   el.innerHTML = '<h2>Мой баланс и подписка</h2><div class="card"><div>Статус: ' + (s.tariff ? '<span class="badge vip">VIP активен</span>' : '<span class="badge">Бесплатный</span>') + '</div>' + (s.tariff ? '<p>Действует до <b>' + s.until.split('-').reverse().join('.') + '</b> (осталось ' + s.daysLeft + ' дн.)</p>' : (s.expired ? '<p class="muted">Срок VIP закончился ' + s.until.split('-').reverse().join('.') + '. Кнопка записи в Картотеке отключена.</p>' : '<p class="muted">Лимит: до 5 услуг. Кнопки записи в Картотеке нет.</p>')) + '</div><div class="card"><b>VIP даёт:</b><br>✔ безлимит услуг<br>✔ бирюзовую кнопку «📅 Записаться на время» в Картотеке<br><p class="muted small">Подписка квартальная: 3 или 6 месяцев вперёд, оплата через Kaspi. После оплаты администратор продлевает срок, вы получите уведомление в Телеграм.</p></div>' + (wa ? '<a class="btn ok" target="_blank" rel="noopener" href="https://wa.me/' + wa + '?text=' + msg + '">💬 Написать администратору</a>' : '<p class="muted small center">Контакт администратора пока не указан.</p>');
 }
 function tPf(el) {
-  el.innerHTML = '<h2>Профиль</h2><div class="card"><label>Имя / название</label><input id="pn" maxlength="60" value="' + esc(CAB.master.name) + '"><label>О себе</label><textarea id="pa" rows="3" maxlength="400">' + esc(CAB.master.about) + '</textarea><button class="btn ok" id="pSave">Сохранить</button></div><div class="card"><b>Сменить ПИН-код</b><label>Старый ПИН</label><input id="po" inputmode="numeric" maxlength="4" type="password"><label>Новый ПИН</label><input id="pw" inputmode="numeric" maxlength="4" type="password"><button class="btn sec" id="pPin">Сменить ПИН</button></div><div id="pE"></div>';
-  $('#pSave', el).onclick = function () { api('profileSave', { name: $('#pn').value, about: $('#pa').value }).then(function () { toast('Сохранено'); refreshCab('pf'); }).catch(function (e) { $('#pE', el).innerHTML = '<div class="err">' + esc(errText(e)) + '</div>'; }); };
+  el.innerHTML = '<h2>Профиль</h2><div class="card"><label>Имя / название</label><input id="pn" maxlength="60" value="' + esc(CAB.master.name) + '"><label>О себе</label><textarea id="pa" rows="3" maxlength="400">' + esc(CAB.master.about) + '</textarea><label>Номер карточки в Картотеке (по желанию)</label><input id="pc" maxlength="40" placeholder="например daryinskoe-1101" value="' + esc(CAB.master.card || '') + '"><p class="muted small">Если укажете номер своей карточки, кнопка «Записаться онлайн» в справочнике откроет именно вашу страницу — даже если телефон в карточке записан иначе.</p><button class="btn ok" id="pSave">Сохранить</button></div><div class="card"><b>Сменить ПИН-код</b><label>Старый ПИН</label><input id="po" inputmode="numeric" maxlength="4" type="password"><label>Новый ПИН</label><input id="pw" inputmode="numeric" maxlength="4" type="password"><button class="btn sec" id="pPin">Сменить ПИН</button></div><div id="pE"></div>';
+  $('#pSave', el).onclick = function () { api('profileSave', { name: $('#pn').value, about: $('#pa').value, card: $('#pc').value }).then(function () { toast('Сохранено'); refreshCab('pf'); }).catch(function (e) { $('#pE', el).innerHTML = '<div class="err">' + esc(errText(e)) + '</div>'; }); };
   $('#pPin', el).onclick = function () { api('pinChange', { oldPin: $('#po').value, newPin: $('#pw').value }).then(function () { toast('ПИН изменён'); }).catch(function (e) { $('#pE', el).innerHTML = '<div class="err">' + esc(errText(e)) + '</div>'; }); };
 }
 
 /* ---------- маршрутизация ---------- */
 function route() {
+  if (DEMO && (location.hash || '#/') === '#/') return demoHome();
   var q = new URLSearchParams(location.search), h = location.hash || '#/';
   if (h === '#/my') return myPage();
   if (h === '#/cab') return cabEntry();
   /* мост с Картотекой: ?m=<имя-ссылка мастера> или ?tel=<телефон мастера из карточки>, по желанию &u=<номера услуг через запятую> */
   var m = (q.get('m') || '').toLowerCase(), tel = (q.get('tel') || q.get('phone') || q.get('t') || '').replace(/[^\d+]/g, '');
   var pre = (q.get('u') || '').split(',').map(function (x) { return x.replace(/[^A-Za-z0-9]/g, ''); }).filter(Boolean).slice(0, 10);
-  if (m && /^[a-z0-9_]{3,30}$/.test(m)) return masterPage(m, '', pre);
+  var card = (q.get('card') || '').trim();
+  if (!/^[A-Za-z0-9а-яА-ЯёЁ_@.\-]{2,40}$/.test(card)) card = '';
+  var telOk = tel && /^\+?\d{10,12}$/.test(tel) ? tel : '';
+  if (m && /^[a-z0-9_]{3,30}$/.test(m)) return masterPage(m, telOk, pre, card);
+  if (card) return masterPage('', telOk, pre, card);   /* ?card=<ID карточки из Картотеки>; телефон — запасной путь */
   if (tel && /^\+?\d{10,12}$/.test(tel)) return masterPage('', tel, pre);
   home(); whatsNew(false);
 }
