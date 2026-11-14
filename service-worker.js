@@ -1,5 +1,5 @@
-/* ЗКО Онлайн-записи v1.2.1 — кэш оболочки; запросы к облачному шлюзу НИКОГДА не кэшируются */
-const CACHE = 'zko-online-zapisi-v1.2.1';
+/* ЗКО Онлайн-записи v1.2.2 — кэш оболочки; запросы к облачному шлюзу НИКОГДА не кэшируются */
+const CACHE = 'zko-online-zapisi-v1.2.2';
 const SHELL = ['./', './index.html', './style.css', './app.js', './demo.js', './config.json', './manifest.webmanifest', './novosti.txt', './icons/icon-192.png', './icons/icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {

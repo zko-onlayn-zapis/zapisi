@@ -68,3 +68,22 @@ label{font-size:14px;color:var(--mut)}
 .consent input{width:20px;height:20px;min-width:20px;margin:1px 0 0;accent-color:var(--pr,#0e9aa7)}
 .consent a{color:inherit;text-decoration:underline;font-weight:700}
 .wn-card h3{margin:14px 0 2px;font-size:15px}.wn-card p{margin:2px 0;font-size:14px;line-height:1.45}
+
+/* v1.2.2 */
+#envtag{background:#ffb300;color:#2b1d00;font-weight:800;font-size:12px;padding:2px 8px;border-radius:8px}
+.notice{background:#fff4d6;color:#4a3500;border:1px solid #f0c75e;border-radius:12px;padding:10px 12px;margin:10px 0;font-size:14px;line-height:1.4}
+@media(prefers-color-scheme:dark){.notice{background:#3a3010;color:#ffe9a8;border-color:#7a6320}}
+.btnrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.btnrow .btn{margin:5px 0}
+select{width:100%;font:inherit;border-radius:12px;border:1px solid var(--br,#cfe6e8);padding:12px;background:var(--card,#fff);color:inherit;margin:4px 0}
+.badge.gold{background:#f4c542;color:#3a2d00}.badge.teal{background:#0e9aa7;color:#fff}
+.mcard{display:block;width:100%;text-align:left;background:var(--card,#fff);border:1px solid var(--br,#cfe6e8);border-radius:14px;padding:12px;margin:8px 0;font:inherit;color:inherit;cursor:pointer}
+.mcard.premium{border-color:#f4c542;background:linear-gradient(#fff9e0,#fff);color:#2b2200}.mcard.light{border-color:#0e9aa7}
+.card.tier.light{border-color:#0e9aa7}.card.tier.gold{border-color:#f4c542}
+hr.sep{border:0;border-top:1px solid var(--br,#cfe6e8);margin:10px 0}
+.row{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed var(--br,#cfe6e8);overflow-wrap:anywhere}.row:last-child{border:0}
+.pos{color:#1a8a4a}.neg{color:#c0392b}
+#foot{text-align:center;color:var(--mut,#5d7a82);font-size:12px;padding:14px 16px 24px;line-height:1.4}#foot p{margin:6px 0 0}.ownsw{display:flex;gap:6px;justify-content:center;align-items:center;cursor:pointer}.ownsw input{width:18px;height:18px;margin:0}
+#nav{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;background:var(--card,#fff);border-top:1px solid var(--br,#cfe6e8);padding-bottom:env(safe-area-inset-bottom)}
+#nav[hidden]{display:none}#nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:0;border:0;background:none;font:inherit;font-size:20px;padding:6px 2px;color:var(--mut,#5d7a82);cursor:pointer;width:auto;margin:0;min-height:52px}
+#nav button span{font-size:11px}#nav button.on{color:var(--pr,#0e9aa7);font-weight:800}
+body.hasnav{padding-bottom:64px}
